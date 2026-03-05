@@ -10,10 +10,9 @@
     <meta name="theme-color" content="#F2F2F7">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3652/3652191.png">
     
-    <title>Chấm Công Pro - Bản Sắt Đá</title>
+    <title>Chấm Công Pro - Bản Hoàn Mỹ Kèm Âm Thanh</title>
     
     <style>
-        /* CSS GIỮ NGUYÊN TỶ LỆ VÀNG OCD CỦA BẠN */
         :root {
             --primary: #bc002d;
             --secondary: #007AFF;
@@ -138,10 +137,17 @@
             padding: 2px;
             box-sizing: border-box;
             border: 1px solid transparent;
+            transition: all 0.2s;
         }
         .cell.has-data { background: #E8F5E9; border-color: #C8E6C9; }
         .cell.today { border: 2px solid var(--secondary); background: #eff6ff; }
-        
+        .cell.selected { 
+            border: 2px solid var(--primary) !important; 
+            box-shadow: 0 0 8px rgba(188, 0, 45, 0.3); 
+            transform: scale(1.05); 
+            z-index: 10;
+        }
+
         .cell-top { display: flex; align-items: center; justify-content: center; gap: 3px; margin-bottom: 2px; }
         .cell-date { font-size: 0.85rem; font-weight: 700; color: var(--text-main); line-height: 1; }
         .cell-icon { font-size: 0.7rem; line-height: 1; }
@@ -157,6 +163,34 @@
 
         .btn-backup { background: #E5E5EA; color: var(--text-main); font-size: 0.8rem; height: 45px; box-shadow: none; margin-top: 0; }
         .btn-restore { background: var(--success); color: white; font-size: 0.8rem; height: 45px; box-shadow: 0 2px 8px rgba(52, 199, 89, 0.2); margin-top: 0;}
+
+        /* BANNER CHÚC MỪNG & CẢNH BÁO */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+            display: none; align-items: center; justify-content: center; z-index: 9999;
+            opacity: 0; transition: opacity 0.3s ease;
+        }
+        .modal-overlay.active { display: flex; opacity: 1; }
+        
+        .modal-box {
+            background: white; width: 85%; max-width: 340px; border-radius: 24px;
+            padding: 30px 20px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            transform: scale(0.8); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .modal-overlay.active .modal-box { transform: scale(1); }
+
+        .modal-icon-top { font-size: 3.5rem; margin-bottom: 10px; line-height: 1; }
+        .modal-title { font-size: 1.1rem; font-weight: 800; color: var(--text-main); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .modal-message { font-size: 1.8rem; font-weight: 800; color: var(--success); margin-bottom: 25px; display: block; }
+        
+        .btn-claim {
+            background: linear-gradient(135deg, #34C759 0%, #28A745 100%); color: white;
+            border: none; width: 100%; padding: 16px; border-radius: 16px; font-size: 1.1rem;
+            font-weight: 800; cursor: pointer; box-shadow: 0 8px 20px rgba(52, 199, 89, 0.3);
+            text-transform: uppercase; transition: transform 0.1s; letter-spacing: 1px;
+        }
+        .btn-claim:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
@@ -261,18 +295,62 @@
         </div>
     </div>
 
+    <div id="rewardModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-icon-top" id="rewardIcon">🥳 🎉 💸</div>
+            <div class="modal-title" id="rewardTitle">CON VỢ LẠI CÓ</div>
+            <div class="modal-message" id="rewardAmount">¥0</div>
+            <button class="btn-claim" id="claimBtn" onclick="claimReward()">CLAIM 🎁</button>
+        </div>
+    </div>
+
     <script>
-        // BƯỚC 1: KHỞI TẠO DỮ LIỆU AN TOÀN (CHỐNG CRASH)
         let workData = [];
         try {
             workData = JSON.parse(localStorage.getItem('ocd_final_pro_v5')) || [];
         } catch (error) {
-            console.warn("Trình duyệt chặn LocalStorage. Chạy chế độ tạm thời.");
+            console.warn("Trình duyệt chặn LocalStorage.");
             workData = [];
         }
+        
         let editingDate = null;
+        let pendingEntry = null;
+        let lastTotalSum = 0;
 
-        // BƯỚC 2: KHỞI TẠO NGÀY HIỆN TẠI (Chuẩn 100% mọi thiết bị)
+        // --- HỆ THỐNG ÂM THANH (SOUND EFFECTS) ---
+        // Tiếng Ka-Ching lúc bấm nút
+        const soundClaim = new Audio('https://actions.google.com/sounds/v1/foley/cash_register_kaching.ogg');
+        // Tiếng máy đếm tiền lúc nhảy số (Tạch tạch tạch)
+        const soundCount = new Audio('https://actions.google.com/sounds/v1/tools/ratchet_fast.ogg');
+        soundCount.loop = true; 
+        soundCount.playbackRate = 1.2; // Tăng tốc độ tiếng đếm tiền lên 1 tí cho giòn
+        soundCount.volume = 0.4; // Cho nhỏ lại để không chói tai
+
+        document.getElementById('workDate').addEventListener('change', (e) => {
+            const selectedDateStr = e.target.value;
+            const existingItem = workData.find(i => i.date === selectedDateStr);
+            
+            if (existingItem) {
+                editEntry(selectedDateStr); 
+            } else {
+                resetForm(true); 
+            }
+            renderAll(); 
+        });
+
+        function autoSelectFactoryByDate(dateStr) {
+            if (!dateStr) return;
+            const d = new Date(dateStr);
+            const dayOfWeek = d.getDay(); 
+            
+            if (dayOfWeek === 2 || dayOfWeek === 4) {
+                document.getElementById('factorySelect').value = 'thit';
+            } else {
+                document.getElementById('factorySelect').value = 'kimchi';
+            }
+            applyFactory();
+        }
+
         function setToday() {
             const today = new Date();
             const yyyy = today.getFullYear();
@@ -295,6 +373,37 @@
             }
         }
 
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            
+            // Bật tiếng máy đếm tiền
+            soundCount.currentTime = 0;
+            soundCount.play().catch(e => console.log("Trình duyệt chặn autoplay âm thanh."));
+
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const easeOutProgress = 1 - Math.pow(1 - progress, 3);
+                
+                const currentVal = Math.floor(easeOutProgress * (end - start) + start);
+                obj.innerText = `¥${currentVal.toLocaleString()}`;
+                
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                } else {
+                    obj.innerText = `¥${end.toLocaleString()}`;
+                    // Nhảy số xong -> Tắt tiếng đếm tiền
+                    soundCount.pause();
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        function closeModalOnly() {
+            document.getElementById('rewardModal').classList.remove('active');
+            pendingEntry = null;
+        }
+
         function saveData() {
             const date = document.getElementById('workDate').value;
             const start = document.getElementById('startTime').value;
@@ -315,22 +424,133 @@
             const hours = diffMin / 60;
             const money = Math.floor((Math.min(8, hours) * rate) + (Math.max(0, hours - 8) * rate * 1.25) + trans);
 
-            const entry = { date, start, end, breakM, rate, trans, factory, hours: hours.toFixed(1), money };
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
             
-            const idx = workData.findIndex(i => i.date === date);
-            if(idx > -1) workData[idx] = entry; 
-            else workData.push(entry);
+            const iconEl = document.getElementById('rewardIcon');
+            const titleEl = document.getElementById('rewardTitle');
+            const amountEl = document.getElementById('rewardAmount');
+            const btnEl = document.getElementById('claimBtn');
+            const modalEl = document.getElementById('rewardModal');
+
+            amountEl.style.fontSize = "1.8rem";
+
+            // LƯU NGÀY TƯƠNG LAI
+            if (date > todayStr) {
+                iconEl.innerText = "💩 🛑 🙅‍♂️";
+                titleEl.innerText = "KHÔNG LÀM MÀ ĐÒI CÓ ĂN";
+                amountEl.innerText = "THÌ CHỈ CÓ ĂN...";
+                amountEl.style.fontSize = "1.5rem"; 
+                
+                btnEl.innerText = "BIẾT RỒI 🥲";
+                btnEl.style.background = "#8E8E93"; 
+                btnEl.style.boxShadow = "none";
+                btnEl.onclick = closeModalOnly; 
+                
+                modalEl.classList.add('active');
+                return; 
+            }
+
+            // LƯU TRƯỚC 17H HÔM NAY
+            if (date === todayStr && now.getHours() < 17) {
+                let target = new Date(); 
+                target.setHours(17, 0, 0, 0);
+                let diff = target - now;
+                let h = Math.floor(diff / (1000 * 60 * 60));
+                let m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                
+                iconEl.innerText = "🥵 💦 ⏳";
+                titleEl.innerText = "YAMATE KUDASAI SẮP RA RỒI";
+                amountEl.innerText = `Còn ${h}h ${m}p nữa...`;
+                amountEl.style.fontSize = "1.5rem";
+                
+                btnEl.innerText = "RÁNG LÀM TIẾP THÔI 😭";
+                btnEl.style.background = "#FF3B30"; 
+                btnEl.style.boxShadow = "0 8px 20px rgba(255, 59, 48, 0.3)";
+                btnEl.onclick = closeModalOnly;
+                
+                modalEl.classList.add('active');
+                return; 
+            }
+
+            // CHUẨN BỊ DỮ LIỆU NẾU HỢP LỆ
+            pendingEntry = { date, start, end, breakM, rate, trans, factory, hours: hours.toFixed(1), money };
+            
+            const monthStr = date.substring(0, 7); 
+            const dayStr = date.split('-')[2];     
+            
+            let tempWorkData = workData.filter(i => i.date !== date);
+            tempWorkData.push(pendingEntry);
+            
+            let ax = 0; 
+            let bx = 0; 
+            
+            tempWorkData.forEach(item => {
+                if (item.date.startsWith(monthStr)) {
+                    if (item.factory === 'kimchi') ax += item.money;
+                    if (item.factory === 'thit') bx += item.money;
+                }
+            });
+
+            let finalTitle = "";
+            let finalIcon = "";
+
+            if (dayStr === '25') {
+                finalTitle = `LƯƠNG CỦA CỤ (¥${ax.toLocaleString()})`;
+                finalIcon = "🥬 💸 👑";
+            } else if (dayStr === '15') {
+                finalTitle = `CHO CHỒNG HẾT (¥${bx.toLocaleString()})`;
+                finalIcon = "🥩 💝 😘";
+            } else if (date < todayStr) {
+                finalTitle = "LẠI QUÊN À NHỢN";
+                finalIcon = "🐷 🐽 🧠";
+            } else {
+                const randomPool = [
+                    { title: "HẸ HẸ LẠI CÓ XIỀN", icon: "🤑 💰 💸" },
+                    { title: "TIỀN CỦA BỐ", icon: "😎 💵 👑" },
+                    { title: "CHO CHỒNG IU HẾT", icon: "🥰 😘 💖" },
+                    { title: "CON VỢ LẠI CÓ", icon: "🥳 🎉 💸" }
+                ];
+                const rand = randomPool[Math.floor(Math.random() * randomPool.length)];
+                finalTitle = rand.title;
+                finalIcon = rand.icon;
+            }
+
+            iconEl.innerText = finalIcon;
+            titleEl.innerText = finalTitle;
+            amountEl.innerText = `¥${money.toLocaleString()}`; 
+            
+            btnEl.innerText = "CLAIM 🎁";
+            btnEl.style.background = "linear-gradient(135deg, #34C759 0%, #28A745 100%)";
+            btnEl.style.boxShadow = "0 8px 20px rgba(52, 199, 89, 0.3)";
+            btnEl.onclick = claimReward; 
+
+            modalEl.classList.add('active');
+        }
+
+        function claimReward() {
+            if (!pendingEntry) return;
+
+            // BẬT TIẾNG KA-CHING KHI BẤM NÚT CLAIM
+            soundClaim.currentTime = 0;
+            soundClaim.play().catch(e => console.log("Lỗi âm thanh:", e));
+
+            const idx = workData.findIndex(i => i.date === pendingEntry.date);
+            if(idx > -1) workData[idx] = pendingEntry; 
+            else workData.push(pendingEntry);
 
             workData.sort((a,b) => new Date(b.date) - new Date(a.date));
             
-            // LƯU DỮ LIỆU AN TOÀN (Báo lỗi nếu bị chặn)
             try {
                 localStorage.setItem('ocd_final_pro_v5', JSON.stringify(workData));
-                resetForm();
-                renderAll();
-                alert(editingDate ? "Cập nhật thành công!" : "Đã lưu thành công!");
+                
+                document.getElementById('rewardModal').classList.remove('active');
+                pendingEntry = null;
+                
+                resetForm(); 
+                renderAll(); // Cập nhật tổng tiền và kích hoạt hiệu ứng nhảy số + máy đếm tiền
             } catch (e) {
-                alert("LỖI: Trình duyệt/App này đang chặn lưu trữ! Hãy mở file bằng Safari hoặc Chrome.");
+                alert("LỖI: Trình duyệt/App này đang chặn lưu trữ!");
             }
         }
 
@@ -355,6 +575,8 @@
             btnSave.className = "btn btn-update"; 
             
             document.getElementById('editActions').style.display = "flex";
+            
+            renderAll(); 
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -370,11 +592,14 @@
             }
         }
 
-        function resetForm() {
+        function resetForm(keepDate = false) {
             editingDate = null;
-            setToday();
-            document.getElementById('factorySelect').value = 'kimchi';
-            applyFactory();
+            if(!keepDate) {
+                setToday();
+            }
+            
+            const currentDateStr = document.getElementById('workDate').value;
+            autoSelectFactoryByDate(currentDateStr);
             
             const btnSave = document.getElementById('btnSave');
             btnSave.innerText = "LƯU DỮ LIỆU";
@@ -432,16 +657,22 @@
         function renderAll() {
             let totalSum = 0;
             workData.forEach(item => totalSum += item.money);
-            document.getElementById('totalVal').innerText = `¥${totalSum.toLocaleString()}`;
+            
+            const totalEl = document.getElementById('totalVal');
+            if (totalSum !== lastTotalSum) {
+                // Tăng thời gian nhảy số lên 1.5 giây (1500ms) để nghe tiếng máy đếm tiền cho đã!
+                animateValue(totalEl, lastTotalSum, totalSum, 1500); 
+                lastTotalSum = totalSum; 
+            } else {
+                totalEl.innerText = `¥${totalSum.toLocaleString()}`;
+            }
 
-            /* RENDER LỊCH (BẢO VỆ CHỐNG LỖI) */
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
             ['T2','T3','T4','T5','T6','T7','CN'].forEach(d => {
                 grid.innerHTML += `<div class="day-name">${d}</div>`;
             });
 
-            // Lấy ngày tháng để vẽ lịch dựa trên ngày hôm nay thực tế
             const now = new Date();
             document.getElementById('monthLabel').innerText = `THÁNG ${now.getMonth() + 1} / ${now.getFullYear()}`;
             
@@ -451,13 +682,15 @@
 
             for(let i=0; i<pad; i++) grid.appendChild(document.createElement('div'));
 
-            // Tính chuỗi ngày hôm nay chuẩn (VD: 2026-03-05)
             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const selectedDateStr = document.getElementById('workDate').value;
 
             for(let d=1; d<=last.getDate(); d++) {
                 const dStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 const item = workData.find(i => i.date === dStr);
+                
                 const isToday = (todayStr === dStr);
+                const isSelected = (selectedDateStr === dStr);
                 
                 let icon = '';
                 if(item) {
@@ -467,7 +700,7 @@
                 }
 
                 const cell = document.createElement('div');
-                cell.className = `cell ${item ? 'has-data' : ''} ${isToday ? 'today' : ''}`;
+                cell.className = `cell ${item ? 'has-data' : ''} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}`;
                 
                 if(item) {
                     cell.innerHTML = `
@@ -481,11 +714,19 @@
                     cell.innerHTML = `<div class="cell-date">${d}</div>`;
                 }
                 
-                cell.onclick = () => item ? editEntry(dStr) : (document.getElementById('workDate').value = dStr);
+                cell.onclick = () => {
+                    if(item) {
+                        editEntry(dStr); 
+                    } else {
+                        document.getElementById('workDate').value = dStr;
+                        resetForm(true); 
+                        renderAll();
+                        window.scrollTo({ top: 0, behavior: 'smooth' }); 
+                    }
+                };
                 grid.appendChild(cell);
             }
 
-            /* RENDER DANH SÁCH */
             const listBody = document.getElementById('listBody');
             listBody.innerHTML = workData.map(item => {
                 let icon = '📝';
@@ -504,9 +745,15 @@
             `}).join('');
         }
 
-        // CHẠY KHỞI TẠO
+        // KHỞI CHẠY APP
         setToday();
-        applyFactory();
+        autoSelectFactoryByDate(document.getElementById('workDate').value);
+        
+        let initialSum = 0;
+        workData.forEach(item => initialSum += item.money);
+        lastTotalSum = initialSum;
+        document.getElementById('totalVal').innerText = `¥${initialSum.toLocaleString()}`;
+        
         renderAll();
     </script>
 </body>
