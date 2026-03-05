@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#F2F2F7">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3652/3652191.png">
     
-    <title>Chấm Công Pro - Bản Hoàn Mỹ Kèm Âm Thanh</title>
+    <title>Chấm Công Pro - Bản Âm Thanh iOS</title>
     
     <style>
         :root {
@@ -309,7 +309,6 @@
         try {
             workData = JSON.parse(localStorage.getItem('ocd_final_pro_v5')) || [];
         } catch (error) {
-            console.warn("Trình duyệt chặn LocalStorage.");
             workData = [];
         }
         
@@ -317,24 +316,30 @@
         let pendingEntry = null;
         let lastTotalSum = 0;
 
-        // --- HỆ THỐNG ÂM THANH (SOUND EFFECTS) ---
-        // Tiếng Ka-Ching lúc bấm nút
-        const soundClaim = new Audio('https://actions.google.com/sounds/v1/foley/cash_register_kaching.ogg');
-        // Tiếng máy đếm tiền lúc nhảy số (Tạch tạch tạch)
-        const soundCount = new Audio('https://actions.google.com/sounds/v1/tools/ratchet_fast.ogg');
+        // --- CẬP NHẬT HỆ THỐNG ÂM THANH CHUẨN MP3 CHO iOS ---
+        // Đổi link sang đuôi .mp3 để iPhone nào cũng đọc được
+        const soundClaim = new Audio('https://raw.githubusercontent.com/iondrimba/images/master/cash-register-kaching.mp3');
+        const soundCount = new Audio('https://raw.githubusercontent.com/iondrimba/images/master/click.mp3');
+        
         soundCount.loop = true; 
-        soundCount.playbackRate = 1.2; // Tăng tốc độ tiếng đếm tiền lên 1 tí cho giòn
-        soundCount.volume = 0.4; // Cho nhỏ lại để không chói tai
+        soundCount.playbackRate = 2.0; // Tăng tốc độ click cho giống máy đếm tiền
+        soundCount.volume = 0.5;
+
+        // BẢO BỐI UNLOCK ÂM THANH TRÊN iOS: 
+        // Khi người dùng chạm nhẹ vào màn hình lần đầu tiên, âm thanh sẽ được "mở khóa" âm thầm
+        document.body.addEventListener('touchstart', function() {
+            if(soundClaim.readyState === 0) {
+                soundClaim.load();
+                soundCount.load();
+            }
+        }, { once: true });
+
 
         document.getElementById('workDate').addEventListener('change', (e) => {
             const selectedDateStr = e.target.value;
             const existingItem = workData.find(i => i.date === selectedDateStr);
-            
-            if (existingItem) {
-                editEntry(selectedDateStr); 
-            } else {
-                resetForm(true); 
-            }
+            if (existingItem) editEntry(selectedDateStr); 
+            else resetForm(true); 
             renderAll(); 
         });
 
@@ -342,12 +347,8 @@
             if (!dateStr) return;
             const d = new Date(dateStr);
             const dayOfWeek = d.getDay(); 
-            
-            if (dayOfWeek === 2 || dayOfWeek === 4) {
-                document.getElementById('factorySelect').value = 'thit';
-            } else {
-                document.getElementById('factorySelect').value = 'kimchi';
-            }
+            if (dayOfWeek === 2 || dayOfWeek === 4) document.getElementById('factorySelect').value = 'thit';
+            else document.getElementById('factorySelect').value = 'kimchi';
             applyFactory();
         }
 
@@ -363,22 +364,19 @@
             const factory = document.getElementById('factorySelect').value;
             const rateInput = document.getElementById('hourlyRate');
             const transInput = document.getElementById('transFee');
-
-            if (factory === 'kimchi') {
-                rateInput.value = 1177;
-                transInput.value = 0;
-            } else if (factory === 'thit') {
-                rateInput.value = 1300;
-                transInput.value = 940;
-            }
+            if (factory === 'kimchi') { rateInput.value = 1177; transInput.value = 0; } 
+            else if (factory === 'thit') { rateInput.value = 1300; transInput.value = 940; }
         }
 
         function animateValue(obj, start, end, duration) {
             let startTimestamp = null;
             
-            // Bật tiếng máy đếm tiền
+            // Bật tiếng đếm tiền
             soundCount.currentTime = 0;
-            soundCount.play().catch(e => console.log("Trình duyệt chặn autoplay âm thanh."));
+            let playPromise = soundCount.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => { /* Bỏ qua lỗi nếu bị chặn */ });
+            }
 
             const step = (timestamp) => {
                 if (!startTimestamp) startTimestamp = timestamp;
@@ -392,8 +390,7 @@
                     window.requestAnimationFrame(step);
                 } else {
                     obj.innerText = `¥${end.toLocaleString()}`;
-                    // Nhảy số xong -> Tắt tiếng đếm tiền
-                    soundCount.pause();
+                    soundCount.pause(); // Tắt tiếng khi nhảy số xong
                 }
             };
             window.requestAnimationFrame(step);
@@ -435,26 +432,23 @@
 
             amountEl.style.fontSize = "1.8rem";
 
-            // LƯU NGÀY TƯƠNG LAI
+            // 1. NGÀY TƯƠNG LAI
             if (date > todayStr) {
                 iconEl.innerText = "💩 🛑 🙅‍♂️";
                 titleEl.innerText = "KHÔNG LÀM MÀ ĐÒI CÓ ĂN";
                 amountEl.innerText = "THÌ CHỈ CÓ ĂN...";
                 amountEl.style.fontSize = "1.5rem"; 
-                
                 btnEl.innerText = "BIẾT RỒI 🥲";
                 btnEl.style.background = "#8E8E93"; 
                 btnEl.style.boxShadow = "none";
                 btnEl.onclick = closeModalOnly; 
-                
                 modalEl.classList.add('active');
                 return; 
             }
 
-            // LƯU TRƯỚC 17H HÔM NAY
+            // 2. HÔM NAY NHƯNG TRƯỚC 17H
             if (date === todayStr && now.getHours() < 17) {
-                let target = new Date(); 
-                target.setHours(17, 0, 0, 0);
+                let target = new Date(); target.setHours(17, 0, 0, 0);
                 let diff = target - now;
                 let h = Math.floor(diff / (1000 * 60 * 60));
                 let m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -463,17 +457,14 @@
                 titleEl.innerText = "YAMATE KUDASAI SẮP RA RỒI";
                 amountEl.innerText = `Còn ${h}h ${m}p nữa...`;
                 amountEl.style.fontSize = "1.5rem";
-                
                 btnEl.innerText = "RÁNG LÀM TIẾP THÔI 😭";
                 btnEl.style.background = "#FF3B30"; 
                 btnEl.style.boxShadow = "0 8px 20px rgba(255, 59, 48, 0.3)";
                 btnEl.onclick = closeModalOnly;
-                
                 modalEl.classList.add('active');
                 return; 
             }
 
-            // CHUẨN BỊ DỮ LIỆU NẾU HỢP LỆ
             pendingEntry = { date, start, end, breakM, rate, trans, factory, hours: hours.toFixed(1), money };
             
             const monthStr = date.substring(0, 7); 
@@ -482,9 +473,7 @@
             let tempWorkData = workData.filter(i => i.date !== date);
             tempWorkData.push(pendingEntry);
             
-            let ax = 0; 
-            let bx = 0; 
-            
+            let ax = 0; let bx = 0; 
             tempWorkData.forEach(item => {
                 if (item.date.startsWith(monthStr)) {
                     if (item.factory === 'kimchi') ax += item.money;
@@ -492,8 +481,7 @@
                 }
             });
 
-            let finalTitle = "";
-            let finalIcon = "";
+            let finalTitle = ""; let finalIcon = "";
 
             if (dayStr === '25') {
                 finalTitle = `LƯƠNG CỦA CỤ (¥${ax.toLocaleString()})`;
@@ -512,8 +500,7 @@
                     { title: "CON VỢ LẠI CÓ", icon: "🥳 🎉 💸" }
                 ];
                 const rand = randomPool[Math.floor(Math.random() * randomPool.length)];
-                finalTitle = rand.title;
-                finalIcon = rand.icon;
+                finalTitle = rand.title; finalIcon = rand.icon;
             }
 
             iconEl.innerText = finalIcon;
@@ -531,9 +518,12 @@
         function claimReward() {
             if (!pendingEntry) return;
 
-            // BẬT TIẾNG KA-CHING KHI BẤM NÚT CLAIM
+            // BẬT TIẾNG KA-CHING
             soundClaim.currentTime = 0;
-            soundClaim.play().catch(e => console.log("Lỗi âm thanh:", e));
+            let playPromise = soundClaim.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => { /* Bỏ qua lỗi */ });
+            }
 
             const idx = workData.findIndex(i => i.date === pendingEntry.date);
             if(idx > -1) workData[idx] = pendingEntry; 
@@ -543,21 +533,16 @@
             
             try {
                 localStorage.setItem('ocd_final_pro_v5', JSON.stringify(workData));
-                
                 document.getElementById('rewardModal').classList.remove('active');
                 pendingEntry = null;
-                
                 resetForm(); 
-                renderAll(); // Cập nhật tổng tiền và kích hoạt hiệu ứng nhảy số + máy đếm tiền
-            } catch (e) {
-                alert("LỖI: Trình duyệt/App này đang chặn lưu trữ!");
-            }
+                renderAll(); 
+            } catch (e) {}
         }
 
         function editEntry(dateStr) {
             const item = workData.find(i => i.date === dateStr);
             if(!item) return;
-
             document.getElementById('workDate').value = item.date;
             document.getElementById('startTime').value = item.start;
             document.getElementById('endTime').value = item.end;
@@ -569,13 +554,10 @@
             else document.getElementById('factorySelect').value = 'custom';
 
             editingDate = item.date;
-            
             const btnSave = document.getElementById('btnSave');
             btnSave.innerText = "CẬP NHẬT THAY ĐỔI";
             btnSave.className = "btn btn-update"; 
-            
             document.getElementById('editActions').style.display = "flex";
-            
             renderAll(); 
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -584,9 +566,7 @@
             const date = document.getElementById('workDate').value;
             if(confirm(`Bạn có chắc chắn muốn xóa dữ liệu ngày ${date.split('-').reverse().join('/')}?`)) {
                 workData = workData.filter(i => i.date !== date);
-                try {
-                    localStorage.setItem('ocd_final_pro_v5', JSON.stringify(workData));
-                } catch(e){}
+                try { localStorage.setItem('ocd_final_pro_v5', JSON.stringify(workData)); } catch(e){}
                 resetForm();
                 renderAll();
             }
@@ -594,9 +574,7 @@
 
         function resetForm(keepDate = false) {
             editingDate = null;
-            if(!keepDate) {
-                setToday();
-            }
+            if(!keepDate) setToday();
             
             const currentDateStr = document.getElementById('workDate').value;
             autoSelectFactoryByDate(currentDateStr);
@@ -604,20 +582,15 @@
             const btnSave = document.getElementById('btnSave');
             btnSave.innerText = "LƯU DỮ LIỆU";
             btnSave.className = "btn btn-save"; 
-            
             document.getElementById('editActions').style.display = "none";
         }
 
         function switchView(view) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
-
             document.getElementById(view + 'View').classList.add('active');
-            if(view === 'cal') {
-                document.getElementById('tabCal').classList.add('active');
-            } else {
-                document.getElementById('tabList').classList.add('active');
-            }
+            if(view === 'cal') document.getElementById('tabCal').classList.add('active');
+            else document.getElementById('tabList').classList.add('active');
         }
 
         function exportData() {
@@ -643,12 +616,8 @@
                         localStorage.setItem('ocd_final_pro_v5', JSON.stringify(workData));
                         renderAll();
                         alert("Đã khôi phục dữ liệu thành công!");
-                    } else {
-                        alert("File không hợp lệ!");
                     }
-                } catch (err) {
-                    alert("Lỗi khi đọc file!");
-                }
+                } catch (err) {}
                 event.target.value = ''; 
             };
             reader.readAsText(file);
@@ -660,7 +629,6 @@
             
             const totalEl = document.getElementById('totalVal');
             if (totalSum !== lastTotalSum) {
-                // Tăng thời gian nhảy số lên 1.5 giây (1500ms) để nghe tiếng máy đếm tiền cho đã!
                 animateValue(totalEl, lastTotalSum, totalSum, 1500); 
                 lastTotalSum = totalSum; 
             } else {
@@ -732,9 +700,7 @@
                 let icon = '📝';
                 if(item.factory === 'kimchi') icon = '🥬';
                 if(item.factory === 'thit') icon = '🥩';
-                
                 const shortDate = item.date.split('-').reverse().slice(0,2).join('/');
-                
                 return `
                 <tr>
                     <td><span style="font-size: 1.1rem; margin-right: 4px;">${icon}</span>${shortDate}</td>
@@ -745,7 +711,6 @@
             `}).join('');
         }
 
-        // KHỞI CHẠY APP
         setToday();
         autoSelectFactoryByDate(document.getElementById('workDate').value);
         
